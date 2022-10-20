@@ -1,13 +1,13 @@
 package com.softwaremill.loom.actor;
 
-public class Reply<R> {
-    private final R reply;
+public class Reply {
+    private final Object reply;
 
-    Reply(R reply) {
+    Reply(Object reply) {
         this.reply = reply;
     }
 
-    R getReply() {
+    Object getReply() {
         return reply;
     }
 }

@@ -2,7 +2,8 @@ package com.softwaremill.loom;
 
 import com.softwaremill.loom.actor.*;
 
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 public class Example1 {
     sealed interface CounterMessage<R> extends Message<R> {}
@@ -13,13 +14,13 @@ public class Example1 {
 
     record Get() implements CounterMessage<Integer> {}
 
-    public static void main(String[] args) throws ExecutionException, InterruptedException {
+    public static void main(String[] args) throws Exception {
         var actor = Actor.create(new ActorBehavior<CounterMessage<?>>() {
             int counter = 0;
 
             @Override
-            public Reply<?> onMessage(CounterMessage<?> message) {
-                Reply<?> reply = null;
+            public Future<Reply> onMessage(ActorRef self, CounterMessage<?> message) {
+                Reply reply = null;
                 switch (message) {
                     case Increase(int i) inc -> {
                         System.out.println("Got an increase message, by: " + i);
@@ -36,9 +37,10 @@ public class Example1 {
                         reply = get.reply(counter);
                     }
                 }
-                return reply;
+                return CompletableFuture.completedFuture(reply);
             }
         });
+
         actor.send(new Increase(10)).get();
         actor.send(new Decrease(8)).get();
         var result = actor.send(new Get()).get();

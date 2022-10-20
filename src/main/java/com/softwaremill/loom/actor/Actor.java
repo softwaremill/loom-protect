@@ -5,11 +5,14 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 public class Actor implements Runnable {
+    private final ActorRef self;
+
     private final LinkedBlockingQueue<PendingMessage<?>> queue;
 
     private final ActorBehavior<Message<?>> behavior;
 
-    Actor(LinkedBlockingQueue<PendingMessage<?>> queue, ActorBehavior<?> behavior) {
+    Actor(ActorRef self, LinkedBlockingQueue<PendingMessage<?>> queue, ActorBehavior<?> behavior) {
+        this.self = self;
         this.queue = queue;
         // see comment in ActorRef
         //noinspection unchecked
@@ -28,11 +31,18 @@ public class Actor implements Runnable {
 
             if (pending != null) {
                 try {
-                    var reply = behavior.onMessage(pending.message());
+                    var reply = behavior.onMessage(self, pending.message());
                     if (reply != null) {
-                        //noinspection unchecked
-                        ((CompletableFuture<Object>) pending.future()).complete(reply.getReply());
-                    }
+                        PendingMessage<?> finalPending = pending;
+                        Thread.startVirtualThread(() -> {
+                            try {
+                                //noinspection unchecked
+                                ((CompletableFuture<Object>) finalPending.future()).complete(reply.get().getReply());
+                            } catch (Exception e) {
+                                finalPending.future().completeExceptionally(e);
+                            }
+                        });
+                    } else pending.future().complete(null);
                 } catch (Exception e) {
                     pending.future().completeExceptionally(e);
                 }
@@ -42,8 +52,9 @@ public class Actor implements Runnable {
 
     public static <MSG extends Message<?>> ActorRef create(ActorBehavior<MSG> behavior) {
         var queue = new LinkedBlockingQueue<PendingMessage<?>>();
-        var actor = new Actor(queue, behavior);
+        var self = new ActorRef(queue);
+        var actor = new Actor(self, queue, behavior);
         Thread.startVirtualThread(actor);
-        return new ActorRef(queue);
+        return self;
     }
 }
