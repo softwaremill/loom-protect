@@ -1,10 +1,16 @@
 package com.softwaremill.loom.actor;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 public class Actor implements Runnable {
+    private static final Logger logger = LoggerFactory.getLogger(Actor.class);
+
     private final ActorRef self;
 
     private final LinkedBlockingQueue<PendingMessage<?>> queue;
@@ -32,22 +38,26 @@ public class Actor implements Runnable {
             if (pending != null) {
                 try {
                     var reply = behavior.onMessage(self, pending.message());
-                    if (reply != null) {
-                        PendingMessage<?> finalPending = pending;
-                        Thread.startVirtualThread(() -> {
-                            try {
-                                //noinspection unchecked
-                                ((CompletableFuture<Object>) finalPending.future()).complete(reply.get().getReply());
-                            } catch (Exception e) {
-                                finalPending.future().completeExceptionally(e);
-                            }
-                        });
-                    } else pending.future().complete(null);
+                    handleReply(pending, reply);
                 } catch (Exception e) {
+                    logger.error("Exception when processing: " + pending.message(), e);
                     pending.future().completeExceptionally(e);
                 }
             }
         }
+    }
+
+    private void handleReply(PendingMessage<?> pending, Future<Reply> reply) {
+        if (reply != null) {
+            Thread.startVirtualThread(() -> {
+                try {
+                    //noinspection unchecked
+                    ((CompletableFuture<Object>) pending.future()).complete(reply.get().getReply());
+                } catch (Exception e) {
+                    pending.future().completeExceptionally(e);
+                }
+            });
+        } else pending.future().complete(null);
     }
 
     public static <MSG extends Message<?>> ActorRef create(ActorBehavior<MSG> behavior) {
